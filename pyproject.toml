@@ -5,10 +5,13 @@ requires-python = ">=3.10"
 dependencies = [
     "pdfplumber>=0.11",
     "google-cloud-documentai>=2.29",
+    "anthropic>=0.40",
+    "python-dotenv>=1.0",
 ]
 
 [project.scripts]
-ingest = "resume_parser.cli:main"
+ingest = "resume_parser.cli:ingest_main"
+segment = "resume_parser.cli:segment_main"
 
 [build-system]
 requires = ["hatchling"]

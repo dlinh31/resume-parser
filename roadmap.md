@@ -8,20 +8,26 @@ A batch pipeline that ingests resume files (PDF, image), parses and structures t
 
 ## Current State (as of 2026-04-20)
 
-**Stages 1–2 are fully implemented and verified.** All 31 test resumes in `raw/resumes/` parse successfully. Output JSON files land in `parsed/`.
+**Stages 1–3 are fully implemented and verified.** All 31 test resumes in `raw/resumes/` parse successfully. Output JSON files land in `parsed/`. Stage 3 adapter + segmentation logic is wired and ready to run against `parsed/`.
 
 ### What exists
 
 ```
 src/resume_parser/
   __init__.py
-  classify.py   ✅ stage 1
-  extract.py    ✅ stage 2
-  cli.py        ✅ ingest CLI entry point
-raw/resumes/    31 real PDF resumes (test corpus)
-parsed/         31 JSON output files (SHA-256 prefix as filename)
-pyproject.toml  package + `ingest` console script
-.venv/          Python 3.13 virtualenv
+  classify.py        ✅ stage 1
+  extract.py         ✅ stage 2
+  segment.py         ✅ stage 3 orchestration
+  cli.py             ✅ ingest + segment CLI entry points
+  llm/
+    __init__.py
+    base.py          ✅ LLMAdapter ABC, SectionType enum, SectionSegment/SegmentResult dataclasses
+    claude.py        ✅ ClaudeAdapter (Haiku, tool-use structured output, header heuristic)
+raw/resumes/         31 real PDF resumes (test corpus)
+parsed/              31 JSON output files (SHA-256 prefix as filename)
+segmented/           stage 3 output directory (empty until `segment` is run)
+pyproject.toml       package + `ingest` + `segment` console scripts
+.venv/               Python 3.13 virtualenv
 ```
 
 ### Stage 2 output format (per file in `parsed/`)
@@ -69,19 +75,48 @@ Decision criterion: average chars/page ≥ 100 → text PDF.
 
 ---
 
-### Stage 3 — Section Segmentation ❌ Not started
-**Planned file:** `src/resume_parser/segment.py`
+### Stage 3 — Section Segmentation ✅ Done
+**Files:** `src/resume_parser/segment.py`, `src/resume_parser/llm/base.py`, `src/resume_parser/llm/claude.py`
 
-**What it does:** Call an LLM with the extracted text and a structured output schema. The LLM partitions the resume into labeled sections: `experience`, `education`, `projects`, `skills`, `summary`, etc.
+**What it does:** Assembles full resume text from `parsed/` pages, calls the LLM via a provider adapter, and writes labeled sections to `segmented/`.
 
 **Input:** `parsed/<file_id>.json` (stage 2 output)
 
-**Output:** `segmented/<file_id>.json` — the same text, now with section boundaries and labels.
+**Output:** `segmented/<file_id>.json`
 
-**Key decisions:**
-- LLM behind a thin adapter so provider (Claude / GPT) is a config switch.
-- Structured output / JSON mode required.
-- Section headers vary wildly ("Work Experience", "Career History", etc.) — LLM handles the long tail without rule maintenance.
+```json
+{
+  "file_id": "<sha256[:12]>",
+  "source_uri": "file:///...",
+  "segmented_at": "<ISO 8601 UTC>",
+  "model": "claude-haiku-4-5-20251001",
+  "prompt_version": 1,
+  "sections": [
+    {
+      "section_type": "contact | summary | objective | experience | education | skills | projects | certifications | awards | publications | volunteer | languages | interests | references | other",
+      "raw_header": "exact header text from resume (empty string for contact block)",
+      "text": "full section text including header",
+      "llm_confidence": 0.95,
+      "header_score": 1.0,
+      "confidence": 0.95
+    }
+  ]
+}
+```
+
+**Confidence design:**
+- `llm_confidence` — self-reported by the LLM (0.0–1.0)
+- `header_score` — rule-based heuristic: does `raw_header` appear as a standalone line? Is it short (≤6 words)? Title/upper case?
+- `confidence = min(llm_confidence, header_score)` — the queryable threshold field
+
+**Key decisions made:**
+- LLM adapter interface (`LLMAdapter` ABC in `llm/base.py`) — swap provider by implementing a new concrete class; no other code changes needed.
+- Model: `claude-haiku-4-5-20251001` by default; overridable via `LLM_MODEL` env var.
+- Structured output via Claude tool use (not raw JSON prompting) — schema-enforced, no parsing needed.
+- Full section text stored in `segmented/` (not offsets) — stage 4 is self-contained.
+- Idempotent: skips files already in `segmented/` unless `--force` is passed.
+
+**Env vars needed:** `ANTHROPIC_API_KEY` (+ optional `LLM_MODEL`)
 
 ---
 
@@ -154,14 +189,14 @@ Low-confidence records must be queryable: `SELECT * FROM bullet WHERE confidence
 | PostgreSQL + pgvector | ❌ | Local Docker or managed (Supabase, Neon) |
 | Google Document AI credentials | ⚠️ | Needed for scan/image path; text PDFs work without it |
 | OpenAI API key | ❌ | For embeddings in stage 6 |
-| LLM API key (Claude or GPT) | ❌ | For stages 3–4 |
+| LLM API key (Claude or GPT) | ⚠️ | `ANTHROPIC_API_KEY` needed for stage 3+; `LLM_MODEL` overrides default Haiku |
 | `.env` file | ❌ | `.env.example` exists; copy and fill in keys |
 
 ---
 
 ## Implementation Order
 
-1. **Stage 3** — section segmentation (LLM adapter + segment schema)
+1. ~~**Stage 3** — section segmentation~~ ✅ Done
 2. **Stage 4** — field extraction (section-specific schemas, bullet atomicity)
 3. **Stage 5** — normalization (date parser, company/skill canonical maps)
 4. **Stage 6** — embeddings + DB write (postgres schema migration, pgvector, provenance)
@@ -175,11 +210,19 @@ Stages 3–4 can be developed and tested against the existing `parsed/` JSON fil
 
 ```bash
 source .venv/bin/activate
+
+# Stage 2: extract text from raw resumes
 ingest raw/resumes/          # entire directory
 ingest raw/resumes/foo.pdf   # single file
+
+# Stage 3: segment extracted text into labeled sections
+segment parsed/              # all files in parsed/
+segment parsed/abc123.json   # single file
+segment parsed/ --force      # re-segment even if output exists
+segment parsed/ --segmented-dir segmented/   # custom output dir
 ```
 
-Or without activating: `.venv/bin/ingest raw/resumes/`
+Or without activating: `.venv/bin/ingest raw/resumes/` / `.venv/bin/segment parsed/`
 
 ## Design Constraints (non-negotiable)
 
