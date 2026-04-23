@@ -12,6 +12,7 @@ dependencies = [
 [project.scripts]
 ingest = "resume_parser.cli:ingest_main"
 segment = "resume_parser.cli:segment_main"
+extract = "resume_parser.cli:extract_main"
 
 [build-system]
 requires = ["hatchling"]

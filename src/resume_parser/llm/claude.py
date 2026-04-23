@@ -3,9 +3,21 @@ import re
 
 import anthropic
 
-from .base import LLMAdapter, SectionSegment, SectionType, SegmentResult
+from .base import (
+    AwardFields,
+    ContactFields,
+    EducationFields,
+    ExperienceFields,
+    ExtractionResult,
+    LLMAdapter,
+    OtherSectionFields,
+    ProjectFields,
+    SectionSegment,
+    SectionType,
+    SegmentResult,
+    SkillGroup,
+)
 
-PROMPT_VERSION = 1
 _MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
 
 _SECTION_TYPES = [t.value for t in SectionType]
@@ -91,10 +103,226 @@ def _header_score(raw_header: str, full_text: str) -> float:
     return 0.85  # found as standalone line but mixed case
 
 
+_KNOWN_SECTION_TYPES = {"contact", "experience", "education", "skills", "projects", "awards"}
+
+_EXTRACT_TOOL = {
+    "name": "extract_resume_fields",
+    "description": "Extract structured fields from all sections of a resume.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "contact": {
+                "type": ["object", "null"],
+                "properties": {
+                    "name": {"type": ["string", "null"]},
+                    "email": {"type": ["string", "null"]},
+                    "phone": {"type": ["string", "null"]},
+                    "linkedin": {"type": ["string", "null"]},
+                    "github": {"type": ["string", "null"]},
+                    "website": {"type": ["string", "null"]},
+                },
+            },
+            "experiences": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "company": {"type": "string"},
+                        "title": {"type": "string"},
+                        "location": {"type": ["string", "null"]},
+                        "start_date": {"type": ["string", "null"]},
+                        "end_date": {"type": ["string", "null"]},
+                        "is_current": {"type": "boolean"},
+                        "bullets": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["company", "title", "is_current", "bullets"],
+                },
+            },
+            "education": {
+                "type": "array",
+                "description": "One entry per degree. If the candidate earned a BS and BA from the same institution, return two separate entries sharing the same institution.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "institution": {"type": "string"},
+                        "degree": {"type": ["string", "null"]},
+                        "field": {"type": ["string", "null"]},
+                        "gpa": {"type": ["string", "null"]},
+                        "graduation_date": {"type": ["string", "null"]},
+                        "honors": {"type": "array", "items": {"type": "string"}},
+                        "courses": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["institution", "honors", "courses"],
+                },
+            },
+            "projects": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "technologies": {"type": "array", "items": {"type": "string"}},
+                        "links": {"type": "array", "items": {"type": "string"}},
+                        "bullets": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["name", "technologies", "links", "bullets"],
+                },
+            },
+            "skill_groups": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": ["string", "null"],
+                            "description": "Category label (e.g. 'Programming Languages'). Null if the resume lists skills without categories.",
+                        },
+                        "items": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["category", "items"],
+                },
+            },
+            "awards": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "issuer": {"type": ["string", "null"]},
+                        "date": {"type": ["string", "null"]},
+                    },
+                    "required": ["name"],
+                },
+            },
+            "other_sections": {
+                "type": "array",
+                "description": "Any section not covered above: volunteer, interests, references, languages, certifications, publications, etc.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "section_type": {"type": "string"},
+                        "raw_header": {"type": "string"},
+                        "text": {"type": "string"},
+                    },
+                    "required": ["section_type", "raw_header", "text"],
+                },
+            },
+        },
+        "required": ["experiences", "education", "projects", "skill_groups", "awards", "other_sections"],
+    },
+}
+
+_EXTRACT_SYSTEM = """\
+You are a resume parser. Extract structured fields from the provided resume sections.
+
+Rules:
+- Dates: copy exactly as written (e.g. "Jul. 2024", "May 2024"). Do not normalize.
+- Education: one entry per degree. If the candidate has both a BS and BA, return two separate education entries.
+- Bullets: copy verbatim as flat strings. Do not sub-structure them.
+- Skills: preserve category labels if present; use null category for unstructured skill lists.
+- Sections not covered by the main fields (volunteer, interests, certifications, etc.) go in other_sections.\
+"""
+
+
 class ClaudeAdapter(LLMAdapter):
     def __init__(self, model: str = _MODEL) -> None:
         self._client = anthropic.Anthropic()
         self._model = model
+
+    def extract(self, segmented: SegmentResult) -> ExtractionResult:
+        blocks = "\n\n".join(
+            f"[{s.section_type.upper()}]\n{s.text}" for s in segmented.sections
+        )
+
+        response = self._client.messages.create(
+            model=self._model,
+            max_tokens=8192,
+            system=_EXTRACT_SYSTEM,
+            tools=[_EXTRACT_TOOL],
+            tool_choice={"type": "tool", "name": "extract_resume_fields"},
+            messages=[{"role": "user", "content": f"Extract all fields from this resume:\n\n{blocks}"}],
+        )
+
+        tool_use = next(b for b in response.content if b.type == "tool_use")
+        d = tool_use.input
+
+        contact = None
+        if d.get("contact"):
+            c = d["contact"]
+            contact = ContactFields(
+                name=c.get("name"),
+                email=c.get("email"),
+                phone=c.get("phone"),
+                linkedin=c.get("linkedin"),
+                github=c.get("github"),
+                website=c.get("website"),
+            )
+
+        experiences = [
+            ExperienceFields(
+                company=e["company"],
+                title=e["title"],
+                location=e.get("location"),
+                start_date=e.get("start_date"),
+                end_date=e.get("end_date"),
+                is_current=e.get("is_current", False),
+                bullets=e.get("bullets", []),
+            )
+            for e in d.get("experiences", [])
+        ]
+
+        education = [
+            EducationFields(
+                institution=e["institution"],
+                degree=e.get("degree"),
+                field=e.get("field"),
+                gpa=e.get("gpa"),
+                graduation_date=e.get("graduation_date"),
+                honors=e.get("honors", []),
+                courses=e.get("courses", []),
+            )
+            for e in d.get("education", [])
+        ]
+
+        projects = [
+            ProjectFields(
+                name=p["name"],
+                technologies=p.get("technologies", []),
+                links=p.get("links", []),
+                bullets=p.get("bullets", []),
+            )
+            for p in d.get("projects", [])
+        ]
+
+        skill_groups = [
+            SkillGroup(category=sg.get("category"), items=sg.get("items", []))
+            for sg in d.get("skill_groups", [])
+        ]
+
+        awards = [
+            AwardFields(name=a["name"], issuer=a.get("issuer"), date=a.get("date"))
+            for a in d.get("awards", [])
+        ]
+
+        other_sections = [
+            OtherSectionFields(
+                section_type=o["section_type"],
+                raw_header=o["raw_header"],
+                text=o["text"],
+            )
+            for o in d.get("other_sections", [])
+        ]
+
+        return ExtractionResult(
+            contact=contact,
+            experiences=experiences,
+            education=education,
+            projects=projects,
+            skill_groups=skill_groups,
+            awards=awards,
+            other_sections=other_sections,
+            model=self._model,
+        )
 
     def segment_resume(self, text: str) -> SegmentResult:
         response = self._client.messages.create(
@@ -124,4 +352,4 @@ class ClaudeAdapter(LLMAdapter):
                 )
             )
 
-        return SegmentResult(sections=sections, model=self._model, prompt_version=PROMPT_VERSION)
+        return SegmentResult(sections=sections, model=self._model)

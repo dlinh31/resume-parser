@@ -40,7 +40,6 @@ def segment(
         "source_uri": parsed["source_uri"],
         "segmented_at": datetime.now(timezone.utc).isoformat(),
         "model": result.model,
-        "prompt_version": result.prompt_version,
         "sections": [
             {
                 "section_type": s.section_type,

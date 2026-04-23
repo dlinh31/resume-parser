@@ -6,9 +6,9 @@ A batch pipeline that ingests resume files (PDF, image), parses and structures t
 
 ---
 
-## Current State (as of 2026-04-20)
+## Current State (as of 2026-04-22)
 
-**Stages 1–3 are fully implemented and verified.** All 31 test resumes in `raw/resumes/` parse successfully. Output JSON files land in `parsed/`. Stage 3 adapter + segmentation logic is wired and ready to run against `parsed/`.
+**Stages 1–4 are fully implemented and verified.** All 31 test resumes in `raw/resumes/` parse successfully. Output JSON files land in `parsed/`. Stage 3 adapter + segmentation logic is wired and ready to run against `parsed/`.
 
 ### What exists
 
@@ -25,7 +25,8 @@ src/resume_parser/
     claude.py        ✅ ClaudeAdapter (Haiku, tool-use structured output, header heuristic)
 raw/resumes/         31 real PDF resumes (test corpus)
 parsed/              31 JSON output files (SHA-256 prefix as filename)
-segmented/           stage 3 output directory (empty until `segment` is run)
+segmented/           stage 3 output (31 JSON files)
+extracted/           stage 4 output directory
 pyproject.toml       package + `ingest` + `segment` console scripts
 .venv/               Python 3.13 virtualenv
 ```
@@ -120,22 +121,41 @@ Decision criterion: average chars/page ≥ 100 → text PDF.
 
 ---
 
-### Stage 4 — Field Extraction ❌ Not started
-**Planned file:** `src/resume_parser/field_extract.py`
+### Stage 4 — Field Extraction ✅ Done
+**Files:** `src/resume_parser/field_extract.py`, `src/resume_parser/llm/base.py`, `src/resume_parser/llm/claude.py`
 
-**What it does:** For each section, call the LLM with a section-specific JSON schema to extract atomic fields.
-
-**Schema by section:**
-- **Experience:** company, title, start\_date, end\_date, location, bullets (each bullet = its own record)
-- **Education:** institution, degree, field, start\_date, end\_date
-- **Projects:** name, description, technologies\[\], links\[\], bullets\[\]
-- **Skills:** flat list of skill strings
+**What it does:** One LLM call per resume extracts all structured fields simultaneously. Sections are passed as labeled blocks; Claude returns a compound JSON object via tool use.
 
 **Input:** `segmented/<file_id>.json`
 
-**Output:** `extracted/<file_id>.json` — structured records, one per entity.
+**Output:** `extracted/<file_id>.json`
 
-**Note:** Bullets are atomic records from the start — concatenating them here would destroy downstream retrieval quality.
+```json
+{
+  "file_id": "...",
+  "source_uri": "file:///...",
+  "extracted_at": "<ISO 8601 UTC>",
+  "model": "claude-haiku-4-5-20251001",
+  "prompt_version": 1,
+  "contact": {"name", "email", "phone", "linkedin", "github", "website"},
+  "experiences": [{"company", "title", "location", "start_date", "end_date", "is_current", "bullets": ["..."]}],
+  "education": [{"institution", "degree", "field", "gpa", "graduation_date", "honors": [], "courses": []}],
+  "projects": [{"name", "technologies": [], "links": [], "bullets": ["..."]}],
+  "skill_groups": [{"category", "items": []}],
+  "awards": [{"name", "issuer", "date"}],
+  "other_sections": [{"section_type", "raw_header", "text"}]
+}
+```
+
+**Key decisions made:**
+- One LLM call per resume (31 calls total for corpus, not ~155)
+- Education: one row per degree — BS + BA from same institution → two education rows
+- Unhandled section types (certifications, volunteer, interests, references, etc.) → `other_sections` array, preserved verbatim
+- Dates copied as raw strings; normalization deferred to Stage 5
+- Bullets are flat strings, not objects
+- Structured output via Claude tool use (`extract_resume_fields` tool)
+
+**Env vars needed:** `ANTHROPIC_API_KEY` (+ optional `LLM_MODEL`)
 
 ---
 
@@ -197,7 +217,7 @@ Low-confidence records must be queryable: `SELECT * FROM bullet WHERE confidence
 ## Implementation Order
 
 1. ~~**Stage 3** — section segmentation~~ ✅ Done
-2. **Stage 4** — field extraction (section-specific schemas, bullet atomicity)
+2. ~~**Stage 4** — field extraction (section-specific schemas, bullet atomicity)~~ ✅ Done
 3. **Stage 5** — normalization (date parser, company/skill canonical maps)
 4. **Stage 6** — embeddings + DB write (postgres schema migration, pgvector, provenance)
 5. **Infrastructure** — set up Postgres locally, wire `.env`, run full batch end-to-end
@@ -220,6 +240,12 @@ segment parsed/              # all files in parsed/
 segment parsed/abc123.json   # single file
 segment parsed/ --force      # re-segment even if output exists
 segment parsed/ --segmented-dir segmented/   # custom output dir
+
+# Stage 4: extract structured fields from segmented sections
+extract segmented/              # all files in segmented/
+extract segmented/abc123.json   # single file
+extract segmented/ --force      # re-extract even if output exists
+extract segmented/ --extracted-dir extracted/   # custom output dir
 ```
 
 Or without activating: `.venv/bin/ingest raw/resumes/` / `.venv/bin/segment parsed/`

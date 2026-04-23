@@ -6,11 +6,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from .extract import extract
+from .field_extract import extract as field_extract
 from .llm.claude import ClaudeAdapter
 from .segment import segment
 
 SUPPORTED = {".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif"}
 _DEFAULT_SEGMENTED = Path("segmented")
+_DEFAULT_EXTRACTED = Path("extracted")
 
 
 def ingest_main() -> None:
@@ -105,3 +107,57 @@ def segment_main() -> None:
             failed += 1
 
     print(f"\nFinished: {ok} segmented, {skipped} skipped, {failed} failed")
+
+
+def extract_main() -> None:
+    """
+    Usage:
+        extract segmented/                    # process all segmented JSON files
+        extract segmented/abc123.json         # single file
+        extract segmented/ --force            # re-extract even if output exists
+        extract segmented/ --extracted-dir extracted/
+    """
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print(extract_main.__doc__)
+        sys.exit(0 if args else 1)
+
+    force = "--force" in args
+    args = [a for a in args if a != "--force"]
+
+    extracted_dir = _DEFAULT_EXTRACTED
+    if "--extracted-dir" in args:
+        idx = args.index("--extracted-dir")
+        extracted_dir = Path(args[idx + 1])
+        args = args[:idx] + args[idx + 2:]
+
+    targets: list[Path] = []
+    for arg in args:
+        p = Path(arg)
+        if p.is_dir():
+            targets.extend(sorted(p.glob("*.json")))
+        elif p.is_file() and p.suffix == ".json":
+            targets.append(p)
+        else:
+            print(f"[skip] not found or not a JSON file: {arg}")
+
+    if not targets:
+        print("No segmented JSON files found.")
+        sys.exit(1)
+
+    adapter = ClaudeAdapter()
+    print(f"Extracting {len(targets)} file(s) → {extracted_dir}/\n")
+
+    ok = skipped = failed = 0
+    for path in targets:
+        try:
+            result = field_extract(path, extracted_dir, adapter, force=force)
+            if result["status"] == "skipped":
+                skipped += 1
+            else:
+                ok += 1
+        except Exception as e:
+            print(f"[error] {path.name}: {e}")
+            failed += 1
+
+    print(f"\nFinished: {ok} extracted, {skipped} skipped, {failed} failed")

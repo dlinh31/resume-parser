@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from dataclasses import field as dc_field
 from enum import Enum
 
 
@@ -35,11 +36,91 @@ class SectionSegment:
 class SegmentResult:
     sections: list[SectionSegment]
     model: str
-    prompt_version: int
 
+
+# ── Stage 4 extraction dataclasses ──────────────────────────────────────────
+
+@dataclass
+class ContactFields:
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    linkedin: str | None = None
+    github: str | None = None
+    website: str | None = None
+
+
+@dataclass
+class ExperienceFields:
+    company: str = ""
+    title: str = ""
+    location: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    is_current: bool = False
+    bullets: list[str] = dc_field(default_factory=list)
+
+
+@dataclass
+class EducationFields:
+    institution: str = ""
+    degree: str | None = None
+    field: str | None = None
+    gpa: str | None = None
+    graduation_date: str | None = None
+    honors: list[str] = dc_field(default_factory=list)
+    courses: list[str] = dc_field(default_factory=list)
+
+
+@dataclass
+class ProjectFields:
+    name: str = ""
+    technologies: list[str] = dc_field(default_factory=list)
+    links: list[str] = dc_field(default_factory=list)
+    bullets: list[str] = dc_field(default_factory=list)
+
+
+@dataclass
+class SkillGroup:
+    category: str | None = None
+    items: list[str] = dc_field(default_factory=list)
+
+
+@dataclass
+class AwardFields:
+    name: str = ""
+    issuer: str | None = None
+    date: str | None = None
+
+
+@dataclass
+class OtherSectionFields:
+    section_type: str = ""
+    raw_header: str = ""
+    text: str = ""
+
+
+@dataclass
+class ExtractionResult:
+    contact: ContactFields | None
+    experiences: list[ExperienceFields]
+    education: list[EducationFields]
+    projects: list[ProjectFields]
+    skill_groups: list[SkillGroup]
+    awards: list[AwardFields]
+    other_sections: list[OtherSectionFields]
+    model: str
+
+
+# ── Adapter interface ────────────────────────────────────────────────────────
 
 class LLMAdapter(ABC):
     @abstractmethod
     def segment_resume(self, text: str) -> SegmentResult:
         """Segment resume text into typed, confidence-scored sections."""
+        ...
+
+    @abstractmethod
+    def extract(self, segmented: SegmentResult) -> ExtractionResult:
+        """Extract structured fields from all sections of a segmented resume."""
         ...
