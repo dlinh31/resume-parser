@@ -18,7 +18,10 @@ src/resume_parser/
   classify.py        ✅ stage 1
   extract.py         ✅ stage 2
   segment.py         ✅ stage 3 orchestration
-  cli.py             ✅ ingest + segment CLI entry points
+  cli.py             ✅ ingest + segment + extract + normalize CLI entry points
+  normalize.py       ✅ stage 5 normalization
+  data/
+    skills_map.json  ✅ raw → canonical skill aliases (manually maintained)
   llm/
     __init__.py
     base.py          ✅ LLMAdapter ABC, SectionType enum, SectionSegment/SegmentResult dataclasses
@@ -26,8 +29,9 @@ src/resume_parser/
 raw/resumes/         31 real PDF resumes (test corpus)
 parsed/              31 JSON output files (SHA-256 prefix as filename)
 segmented/           stage 3 output (31 JSON files)
-extracted/           stage 4 output directory
-pyproject.toml       package + `ingest` + `segment` console scripts
+extracted/           stage 4 output (31 JSON files)
+normalized/          stage 5 output (31 JSON files)
+pyproject.toml       package + `ingest` + `segment` + `extract` + `normalize` console scripts
 .venv/               Python 3.13 virtualenv
 ```
 
@@ -159,20 +163,27 @@ Decision criterion: average chars/page ≥ 100 → text PDF.
 
 ---
 
-### Stage 5 — Normalization & Enrichment ❌ Not started
-**Planned file:** `src/resume_parser/normalize.py`
+### Stage 5 — Normalization & Enrichment ✅ Done
+**Files:** `src/resume_parser/normalize.py`, `src/resume_parser/data/skills_map.json`
 
 **What it does:** Canonicalize extracted values while preserving the raw form.
-- Dates → ISO 8601 (`YYYY-MM` or `YYYY-MM-DD`)
-- Company names → canonical form ("Google LLC" → "Google")
-- Skills → deduplicated canonical names ("ReactJS" / "React.js" → "React")
-- Locations → consistent format (city, state/country)
-
-Both raw and canonical forms are stored — raw is kept because canonicalization can be wrong.
+- Dates → ISO 8601 `YYYY-MM` added as `_iso` suffixed fields alongside raw strings
+- Company names → legal suffix stripped (`_canonical` field added)
+- Skills → flat deduplicated `skills: [{raw, canonical, category}]` list; slash compounds split into two items; year annotations ("C++ (6 years)") stripped; subcategory parentheticals ("SQL (PostgreSQL, MySQL)") → parent only
+- Locations → `(Remote)` / `, Remote` stripped into `is_remote: bool`; spelled-out US states abbreviated
 
 **Input:** `extracted/<file_id>.json`
 
-**Output:** normalized records with `{raw: "...", canonical: "..."}` fields where applicable.
+**Output:** `normalized/<file_id>.json` — structurally identical to extracted with canonical fields added
+
+**Key decisions made:**
+- Seasonal dates: Spring → 05, Summer → 08, Fall/Autumn → 12
+- "Expected May 2026" → `graduation_date_iso: "2026-05"`, `is_expected: true`
+- "Present" → `end_date_iso: null` (`is_current` is already the authoritative signal)
+- No new dependencies — all date parsing done with stdlib `datetime.strptime`
+- `skills_map.json` is bundled data, manually maintained, covers ~30 observed corpus aliases
+
+**Env vars needed:** none
 
 ---
 
@@ -218,7 +229,7 @@ Low-confidence records must be queryable: `SELECT * FROM bullet WHERE confidence
 
 1. ~~**Stage 3** — section segmentation~~ ✅ Done
 2. ~~**Stage 4** — field extraction (section-specific schemas, bullet atomicity)~~ ✅ Done
-3. **Stage 5** — normalization (date parser, company/skill canonical maps)
+3. ~~**Stage 5** — normalization (date parser, company/skill canonical maps)~~ ✅ Done
 4. **Stage 6** — embeddings + DB write (postgres schema migration, pgvector, provenance)
 5. **Infrastructure** — set up Postgres locally, wire `.env`, run full batch end-to-end
 
@@ -246,6 +257,12 @@ extract segmented/              # all files in segmented/
 extract segmented/abc123.json   # single file
 extract segmented/ --force      # re-extract even if output exists
 extract segmented/ --extracted-dir extracted/   # custom output dir
+
+# Stage 5: normalize dates, companies, skills, locations
+normalize extracted/              # all files in extracted/
+normalize extracted/abc123.json   # single file
+normalize extracted/ --force      # re-normalize even if output exists
+normalize extracted/ --normalized-dir normalized/   # custom output dir
 ```
 
 Or without activating: `.venv/bin/ingest raw/resumes/` / `.venv/bin/segment parsed/`
