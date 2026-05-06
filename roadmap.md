@@ -6,9 +6,9 @@ A batch pipeline that ingests resume files (PDF, image), parses and structures t
 
 ---
 
-## Current State (as of 2026-04-22)
+## Current State (as of 2026-05-06)
 
-**Stages 1–4 are fully implemented and verified.** All 31 test resumes in `data/raw/resumes/` parse successfully. Output JSON files land in `data/parsed/`. Stage 3 adapter + segmentation logic is wired and ready to run against `data/parsed/`.
+**Stages 1–6 are fully implemented and verified.** All 31 test resumes parse successfully end-to-end. Normalized records are indexed into a local PostgreSQL database with pgvector embeddings on every bullet.
 
 ### What exists
 
@@ -18,8 +18,10 @@ src/resume_parser/
   classify.py        ✅ stage 1
   extract.py         ✅ stage 2
   segment.py         ✅ stage 3 orchestration
-  cli.py             ✅ ingest + segment + extract + normalize CLI entry points
+  field_extract.py   ✅ stage 4 field extraction
   normalize.py       ✅ stage 5 normalization
+  index.py           ✅ stage 6 DB indexer
+  cli.py             ✅ ingest + segment + extract + normalize + index CLI entry points
   data/
     skills_map.json  ✅ raw → canonical skill aliases (manually maintained)
   llm/
@@ -31,7 +33,7 @@ data/parsed/              31 JSON output files (SHA-256 prefix as filename)
 data/segmented/           stage 3 output (31 JSON files)
 data/extracted/           stage 4 output (31 JSON files)
 data/normalized/          stage 5 output (31 JSON files)
-pyproject.toml       package + `ingest` + `segment` + `extract` + `normalize` console scripts
+pyproject.toml       package + `ingest` + `segment` + `extract` + `normalize` + `index` console scripts
 .venv/               Python 3.13 virtualenv
 ```
 
@@ -187,29 +189,27 @@ Decision criterion: average chars/page ≥ 100 → text PDF.
 
 ---
 
-### Stage 6 — Validation, Provenance & Indexing ❌ Not started
-**Planned file:** `src/resume_parser/index.py`
+### Stage 6 — Validation, Provenance & Indexing ✅ Done
+**File:** `src/resume_parser/index.py`
 
 **What it does:**
-1. Attach provenance to every record: source URI, page/position, parser version, confidence score, extraction timestamp.
-2. Compute embeddings for every bullet and experience description via OpenAI `text-embedding-3-small` (1536-dim).
-3. Write all records to PostgreSQL in a single transaction per resume.
+1. Attaches provenance to every resume record: source URI, normalizer version, normalized timestamp.
+2. Computes embeddings for every bullet via OpenAI `text-embedding-3-small` (1536-dim).
+3. Writes all records to PostgreSQL in a single transaction per resume; idempotent (skips or force-replaces).
 
 **Env vars needed:** `OPENAI_API_KEY`, `DATABASE_URL`
 
-**PostgreSQL schema (planned):**
+**PostgreSQL schema (migration: `migrations/001_initial.sql`):**
 ```
-parser_version (id, version_string, created_at)
-resume         (id, file_id, source_uri, parser_version_id, ingested_at)
-section        (id, resume_id, label, raw_text)
-experience     (id, section_id, company_raw, company_canonical, title, start_date, end_date, location)
-bullet         (id, experience_id OR project_id, text, embedding vector(1536), confidence)
-education      (id, section_id, institution, degree, field, start_date, end_date)
-project        (id, section_id, name, description, technologies JSONB, links JSONB)
-skill          (id, resume_id, raw, canonical)
+resume        (id, file_id, source_uri, normalizer_version, normalized_at, contact_*)
+experience    (id, resume_id, company_raw, company_canonical, title, location_*, is_remote, start/end_date_*, is_current, position)
+education     (id, resume_id, institution, degree, field, gpa, graduation_date_*, is_expected, honors JSONB, courses JSONB, position)
+project       (id, resume_id, name, technologies JSONB, links JSONB, position)
+bullet        (id, experience_id OR project_id [exclusive], text, embedding vector(1536), position)
+skill         (id, canonical UNIQUE)
+resume_skill  (id, resume_id, skill_id, raw, category)
+other_section (id, resume_id, section_type, raw_header, raw_text, position)
 ```
-
-Low-confidence records must be queryable: `SELECT * FROM bullet WHERE confidence < 0.7`.
 
 ---
 
@@ -217,11 +217,11 @@ Low-confidence records must be queryable: `SELECT * FROM bullet WHERE confidence
 
 | Component | Status | Notes |
 |---|---|---|
-| PostgreSQL + pgvector | ❌ | Local Docker or managed (Supabase, Neon) |
+| PostgreSQL + pgvector | ✅ | Postgres.app 16.2 running locally; schema migrated |
 | Google Document AI credentials | ⚠️ | Needed for scan/image path; text PDFs work without it |
-| OpenAI API key | ❌ | For embeddings in stage 6 |
-| LLM API key (Claude or GPT) | ⚠️ | `ANTHROPIC_API_KEY` needed for stage 3+; `LLM_MODEL` overrides default Haiku |
-| `.env` file | ❌ | `.env.example` exists; copy and fill in keys |
+| OpenAI API key | ✅ | Set in `.env`; used for bullet embeddings in stage 6 |
+| LLM API key (Claude or GPT) | ✅ | `ANTHROPIC_API_KEY` set in `.env`; `LLM_MODEL` overrides default Haiku |
+| `.env` file | ✅ | Contains `ANTHROPIC_API_KEY`, `DATABASE_URL`, `OPENAI_API_KEY` |
 
 ---
 
@@ -230,10 +230,8 @@ Low-confidence records must be queryable: `SELECT * FROM bullet WHERE confidence
 1. ~~**Stage 3** — section segmentation~~ ✅ Done
 2. ~~**Stage 4** — field extraction (section-specific schemas, bullet atomicity)~~ ✅ Done
 3. ~~**Stage 5** — normalization (date parser, company/skill canonical maps)~~ ✅ Done
-4. **Stage 6** — embeddings + DB write (postgres schema migration, pgvector, provenance)
-5. **Infrastructure** — set up Postgres locally, wire `.env`, run full batch end-to-end
-
-Stages 3–4 can be developed and tested against the existing `data/parsed/` JSON files without any database. Stages 5–6 require database infrastructure.
+4. ~~**Stage 6** — embeddings + DB write (postgres schema migration, pgvector, provenance)~~ ✅ Done
+5. ~~**Infrastructure** — set up Postgres locally, wire `.env`, run full batch end-to-end~~ ✅ Done
 
 ---
 
@@ -263,6 +261,11 @@ normalize data/extracted/              # all files in data/extracted/
 normalize data/extracted/abc123.json   # single file
 normalize data/extracted/ --force      # re-normalize even if output exists
 normalize data/extracted/ --normalized-dir data/normalized/   # custom output dir
+
+# Stage 6: embed bullets and write to PostgreSQL
+index data/normalized/              # all files in data/normalized/
+index data/normalized/abc123.json   # single file
+index data/normalized/ --force      # re-index even if resume already exists
 ```
 
 Or without activating: `.venv/bin/ingest data/raw/resumes/` / `.venv/bin/segment data/parsed/`
