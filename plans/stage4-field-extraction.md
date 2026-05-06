@@ -2,10 +2,10 @@
 
 ## Goal
 
-For each segmented resume, make **one LLM call** that extracts all structured fields from all sections simultaneously. Output lands in `extracted/<file_id>.json`. Bullets are atomic records from the start — each bullet is its own row in the DB and its own item in the JSON array.
+For each segmented resume, make **one LLM call** that extracts all structured fields from all sections simultaneously. Output lands in `data/extracted/<file_id>.json`. Bullets are atomic records from the start — each bullet is its own row in the DB and its own item in the JSON array.
 
-**Input:** `segmented/<file_id>.json`  
-**Output:** `extracted/<file_id>.json`
+**Input:** `data/segmented/<file_id>.json`  
+**Output:** `data/extracted/<file_id>.json`
 
 ---
 
@@ -20,7 +20,7 @@ One call per resume. All segmented sections are passed together in a single prom
 
 ---
 
-## Output Schema (per `extracted/<file_id>.json`)
+## Output Schema (per `data/extracted/<file_id>.json`)
 
 ```json
 {
@@ -273,17 +273,17 @@ Implement `ClaudeAdapter.extract(segmented: SegmentResult) -> ExtractionResult`:
 
 Mirror `segment.py` structure:
 - `extract(parsed_dir, segmented_dir, extracted_dir, force=False)` function
-- Idempotent: skip files already in `extracted/` unless `--force`
-- Reads from `segmented/<file_id>.json`, writes to `extracted/<file_id>.json`
+- Idempotent: skip files already in `data/extracted/` unless `--force`
+- Reads from `data/segmented/<file_id>.json`, writes to `data/extracted/<file_id>.json`
 
 ### Step 4 — CLI (`cli.py`)
 
 Add `extract_main()` alongside existing `ingest_main()` and `segment_main()`:
 ```
-extract segmented/              # all files
-extract segmented/abc123.json   # single file
-extract segmented/ --force      # re-extract even if output exists
-extract segmented/ --extracted-dir extracted/   # custom output dir
+extract data/segmented/              # all files
+extract data/segmented/abc123.json   # single file
+extract data/segmented/ --force      # re-extract even if output exists
+extract data/segmented/ --extracted-dir data/extracted/   # custom output dir
 ```
 
 Wire up in `pyproject.toml` as `extract` console script.
@@ -318,7 +318,7 @@ src/resume_parser/
   llm/
     base.py              -- add ExtractionResult + extract() ABC method
     claude.py            -- implement extract() on ClaudeAdapter
-extracted/               -- stage 4 output directory (new)
+data/extracted/               -- stage 4 output directory (new)
 plans/
   stage4-field-extraction.md   -- this file
 ```

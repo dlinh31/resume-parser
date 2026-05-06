@@ -9,7 +9,7 @@ from google.cloud import documentai
 
 from .classify import FileType, classify
 
-PARSED_DIR = Path("parsed")
+PARSED_DIR = Path("data/parsed")
 
 _MIME_TYPES = {
     ".jpg": "image/jpeg",

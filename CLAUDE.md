@@ -27,11 +27,11 @@ src/
   resume_parser/
     __init__.py
     classify.py   # stage 1: detect pdf_text / pdf_scanned / image
-    extract.py    # stage 2: extract text + layout, write to parsed/
+    extract.py    # stage 2: extract text + layout, write to data/parsed/
     cli.py        # `ingest` CLI entry point
-raw/
+data/raw/
   resumes/        # original resume files (31 PDFs)
-parsed/           # stage 2 JSON output, one file per resume (keyed by SHA-256 prefix)
+data/parsed/           # stage 2 JSON output, one file per resume (keyed by SHA-256 prefix)
 pyproject.toml
 ```
 
@@ -39,17 +39,17 @@ pyproject.toml
 
 ```bash
 source .venv/bin/activate
-ingest raw/resumes/          # entire directory
-ingest raw/resumes/foo.pdf   # single file
-ingest raw/resumes/*.pdf     # glob
+ingest data/raw/resumes/          # entire directory
+ingest data/raw/resumes/foo.pdf   # single file
+ingest data/raw/resumes/*.pdf     # glob
 ```
 
-Or without activating: `.venv/bin/ingest raw/resumes/`
+Or without activating: `.venv/bin/ingest data/raw/resumes/`
 
 ## Pipeline Stages
 
 1. **File Classification** (`classify.py`) — detects `pdf_text`, `pdf_scanned`, or `image` ✅
-2. **Text & Layout Extraction** (`extract.py`) — pdfplumber for text PDFs, Document AI for scanned/images; persists JSON to `parsed/` ✅
+2. **Text & Layout Extraction** (`extract.py`) — pdfplumber for text PDFs, Document AI for scanned/images; persists JSON to `data/parsed/` ✅
 3. **Section Segmentation** — LLM call with structured output to identify resume sections
 4. **Field Extraction** — LLM call to extract atomic fields per section; bullets stored separately
 5. **Normalization & Enrichment** — canonicalize dates, companies, skills, locations
@@ -67,8 +67,8 @@ Each stage's output is persisted so any stage can be re-run independently.
 ## Storage Layout
 
 ```
-raw/          # original uploaded files (URI-addressed)
-parsed/       # stage 2 raw text output per file (SHA-256 prefix as filename)
+data/raw/          # original uploaded files (URI-addressed)
+data/parsed/       # stage 2 raw text output per file (SHA-256 prefix as filename)
 ```
 
 PostgreSQL schema (planned): resume → section → field/bullet with JSONB for variable fields.

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Transform `extracted/<file_id>.json` (Stage 4 output) into `normalized/<file_id>.json` by adding canonical forms alongside every raw value. No raw data is discarded.
+Transform `data/extracted/<file_id>.json` (Stage 4 output) into `data/normalized/<file_id>.json` by adding canonical forms alongside every raw value. No raw data is discarded.
 
 ---
 
@@ -49,7 +49,7 @@ All standard formats parse with stdlib `datetime.strptime` after stripping trail
 
 ---
 
-## Output Schema: `normalized/<file_id>.json`
+## Output Schema: `data/normalized/<file_id>.json`
 
 Structurally identical to the extracted file with these additions:
 
@@ -147,7 +147,7 @@ def normalize(
 ) -> dict:
     # load extracted JSON
     # apply normalization to each entity type
-    # write normalized/<file_id>.json
+    # write data/normalized/<file_id>.json
     # return {"file_id": ..., "status": "ok"|"skipped"}
 ```
 
@@ -304,10 +304,10 @@ Appears frequently: "AWS (EC2, S3, RDS, Lambda)", "SQL (PostgreSQL, MySQL)", "C#
 ## CLI pattern (matches Stages 3 and 4)
 
 ```
-normalize extracted/                    # all files in extracted/
-normalize extracted/abc123.json         # single file
-normalize extracted/ --force            # re-normalize even if output exists
-normalize extracted/ --normalized-dir normalized/
+normalize data/extracted/                    # all files in data/extracted/
+normalize data/extracted/abc123.json         # single file
+normalize data/extracted/ --force            # re-normalize even if output exists
+normalize data/extracted/ --normalized-dir data/normalized/
 ```
 
 ---

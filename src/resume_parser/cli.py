@@ -14,17 +14,17 @@ from .normalize import normalize
 from .segment import segment
 
 SUPPORTED = {".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif"}
-_DEFAULT_SEGMENTED = Path("segmented")
-_DEFAULT_EXTRACTED = Path("extracted")
-_DEFAULT_NORMALIZED = Path("normalized")
+_DEFAULT_SEGMENTED = Path("data/segmented")
+_DEFAULT_EXTRACTED = Path("data/extracted")
+_DEFAULT_NORMALIZED = Path("data/normalized")
 
 
 def ingest_main() -> None:
     """
     Usage:
-        ingest raw/resumes/resume.pdf
-        ingest raw/resumes/*.pdf
-        ingest raw/resumes/          # process entire directory
+        ingest data/raw/resumes/resume.pdf
+        ingest data/raw/resumes/*.pdf
+        ingest data/raw/resumes/          # process entire directory
     """
     args = sys.argv[1:]
     if not args:
@@ -62,10 +62,10 @@ def ingest_main() -> None:
 def segment_main() -> None:
     """
     Usage:
-        segment parsed/                   # process all parsed JSON files
-        segment parsed/abc123.json        # single file
-        segment parsed/ --force           # re-segment even if output exists
-        segment parsed/ --segmented-dir segmented/
+        segment data/parsed/                   # process all parsed JSON files
+        segment data/parsed/abc123.json        # single file
+        segment data/parsed/ --force           # re-segment even if output exists
+        segment data/parsed/ --segmented-dir data/segmented/
     """
     args = sys.argv[1:]
     if not args or args[0] in ("-h", "--help"):
@@ -116,10 +116,10 @@ def segment_main() -> None:
 def extract_main() -> None:
     """
     Usage:
-        extract segmented/                    # process all segmented JSON files
-        extract segmented/abc123.json         # single file
-        extract segmented/ --force            # re-extract even if output exists
-        extract segmented/ --extracted-dir extracted/
+        extract data/segmented/                    # process all segmented JSON files
+        extract data/segmented/abc123.json         # single file
+        extract data/segmented/ --force            # re-extract even if output exists
+        extract data/segmented/ --extracted-dir data/extracted/
     """
     args = sys.argv[1:]
     if not args or args[0] in ("-h", "--help"):
@@ -170,10 +170,10 @@ def extract_main() -> None:
 def normalize_main() -> None:
     """
     Usage:
-        normalize extracted/                    # process all extracted JSON files
-        normalize extracted/abc123.json         # single file
-        normalize extracted/ --force            # re-normalize even if output exists
-        normalize extracted/ --normalized-dir normalized/
+        normalize data/extracted/                    # process all extracted JSON files
+        normalize data/extracted/abc123.json         # single file
+        normalize data/extracted/ --force            # re-normalize even if output exists
+        normalize data/extracted/ --normalized-dir data/normalized/
     """
     args = sys.argv[1:]
     if not args or args[0] in ("-h", "--help"):
@@ -223,9 +223,9 @@ def normalize_main() -> None:
 def index_main() -> None:
     """
     Usage:
-        index normalized/                 # process all normalized JSON files
-        index normalized/abc123.json      # single file
-        index normalized/ --force         # delete and re-insert even if already indexed
+        index data/normalized/                 # process all normalized JSON files
+        index data/normalized/abc123.json      # single file
+        index data/normalized/ --force         # delete and re-insert even if already indexed
     """
     args = sys.argv[1:]
     if not args or args[0] in ("-h", "--help"):

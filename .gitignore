@@ -1,11 +1,7 @@
 .env
-parsed/
+data/
 __pycache__/
 *.pyc
 .venv/
 *.egg-info/
 dist/
-raw/
-segmented/
-/extracted/
-/normalized/

@@ -38,34 +38,34 @@ Text-only PDFs only need `ANTHROPIC_API_KEY`.
 Stages 1 and 2 run together under `ingest`:
 
 ```bash
-ingest raw/resumes/           # entire directory
-ingest raw/resumes/foo.pdf    # single file
+ingest data/raw/resumes/           # entire directory
+ingest data/raw/resumes/foo.pdf    # single file
 ```
 
 Stage 3 — segment into labeled sections:
 
 ```bash
-segment parsed/               # all files
-segment parsed/abc123.json    # single file
-segment parsed/ --force       # re-run even if output exists
-segment parsed/ --segmented-dir path/to/out/
+segment data/parsed/               # all files
+segment data/parsed/abc123.json    # single file
+segment data/parsed/ --force       # re-run even if output exists
+segment data/parsed/ --segmented-dir path/to/out/
 ```
 
 Stage 4 — extract structured fields:
 
 ```bash
-extract segmented/            # all files
-extract segmented/abc123.json # single file
-extract segmented/ --force    # re-run even if output exists
-extract segmented/ --extracted-dir path/to/out/
+extract data/segmented/            # all files
+extract data/segmented/abc123.json # single file
+extract data/segmented/ --force    # re-run even if output exists
+extract data/segmented/ --extracted-dir path/to/out/
 ```
 
 Full pipeline end to end:
 
 ```bash
-ingest raw/resumes/
-segment parsed/
-extract segmented/
+ingest data/raw/resumes/
+segment data/parsed/
+extract data/segmented/
 ```
 
 All commands are idempotent — files with existing output are skipped unless `--force` is passed.

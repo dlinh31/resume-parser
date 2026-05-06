@@ -8,7 +8,7 @@ A batch pipeline that ingests resume files (PDF, image), parses and structures t
 
 ## Current State (as of 2026-04-22)
 
-**Stages 1–4 are fully implemented and verified.** All 31 test resumes in `raw/resumes/` parse successfully. Output JSON files land in `parsed/`. Stage 3 adapter + segmentation logic is wired and ready to run against `parsed/`.
+**Stages 1–4 are fully implemented and verified.** All 31 test resumes in `data/raw/resumes/` parse successfully. Output JSON files land in `data/parsed/`. Stage 3 adapter + segmentation logic is wired and ready to run against `data/parsed/`.
 
 ### What exists
 
@@ -26,16 +26,16 @@ src/resume_parser/
     __init__.py
     base.py          ✅ LLMAdapter ABC, SectionType enum, SectionSegment/SegmentResult dataclasses
     claude.py        ✅ ClaudeAdapter (Haiku, tool-use structured output, header heuristic)
-raw/resumes/         31 real PDF resumes (test corpus)
-parsed/              31 JSON output files (SHA-256 prefix as filename)
-segmented/           stage 3 output (31 JSON files)
-extracted/           stage 4 output (31 JSON files)
-normalized/          stage 5 output (31 JSON files)
+data/raw/resumes/         31 real PDF resumes (test corpus)
+data/parsed/              31 JSON output files (SHA-256 prefix as filename)
+data/segmented/           stage 3 output (31 JSON files)
+data/extracted/           stage 4 output (31 JSON files)
+data/normalized/          stage 5 output (31 JSON files)
 pyproject.toml       package + `ingest` + `segment` + `extract` + `normalize` console scripts
 .venv/               Python 3.13 virtualenv
 ```
 
-### Stage 2 output format (per file in `parsed/`)
+### Stage 2 output format (per file in `data/parsed/`)
 
 ```json
 {
@@ -75,7 +75,7 @@ Decision criterion: average chars/page ≥ 100 → text PDF.
 
 - **Text PDFs:** pdfplumber extracts text + word-level bounding boxes per page.
 - **Scanned PDFs / images:** Google Document AI returns text + block-level bounding boxes + per-block confidence scores.
-- Output written to `parsed/<file_id>.json`.
+- Output written to `data/parsed/<file_id>.json`.
 - Env vars required for Document AI path: `DOCAI_PROJECT_ID`, `DOCAI_PROCESSOR_ID`, `DOCAI_LOCATION` (default: `us`).
 
 ---
@@ -83,11 +83,11 @@ Decision criterion: average chars/page ≥ 100 → text PDF.
 ### Stage 3 — Section Segmentation ✅ Done
 **Files:** `src/resume_parser/segment.py`, `src/resume_parser/llm/base.py`, `src/resume_parser/llm/claude.py`
 
-**What it does:** Assembles full resume text from `parsed/` pages, calls the LLM via a provider adapter, and writes labeled sections to `segmented/`.
+**What it does:** Assembles full resume text from `data/parsed/` pages, calls the LLM via a provider adapter, and writes labeled sections to `data/segmented/`.
 
-**Input:** `parsed/<file_id>.json` (stage 2 output)
+**Input:** `data/parsed/<file_id>.json` (stage 2 output)
 
-**Output:** `segmented/<file_id>.json`
+**Output:** `data/segmented/<file_id>.json`
 
 ```json
 {
@@ -118,8 +118,8 @@ Decision criterion: average chars/page ≥ 100 → text PDF.
 - LLM adapter interface (`LLMAdapter` ABC in `llm/base.py`) — swap provider by implementing a new concrete class; no other code changes needed.
 - Model: `claude-haiku-4-5-20251001` by default; overridable via `LLM_MODEL` env var.
 - Structured output via Claude tool use (not raw JSON prompting) — schema-enforced, no parsing needed.
-- Full section text stored in `segmented/` (not offsets) — stage 4 is self-contained.
-- Idempotent: skips files already in `segmented/` unless `--force` is passed.
+- Full section text stored in `data/segmented/` (not offsets) — stage 4 is self-contained.
+- Idempotent: skips files already in `data/segmented/` unless `--force` is passed.
 
 **Env vars needed:** `ANTHROPIC_API_KEY` (+ optional `LLM_MODEL`)
 
@@ -130,9 +130,9 @@ Decision criterion: average chars/page ≥ 100 → text PDF.
 
 **What it does:** One LLM call per resume extracts all structured fields simultaneously. Sections are passed as labeled blocks; Claude returns a compound JSON object via tool use.
 
-**Input:** `segmented/<file_id>.json`
+**Input:** `data/segmented/<file_id>.json`
 
-**Output:** `extracted/<file_id>.json`
+**Output:** `data/extracted/<file_id>.json`
 
 ```json
 {
@@ -172,9 +172,9 @@ Decision criterion: average chars/page ≥ 100 → text PDF.
 - Skills → flat deduplicated `skills: [{raw, canonical, category}]` list; slash compounds split into two items; year annotations ("C++ (6 years)") stripped; subcategory parentheticals ("SQL (PostgreSQL, MySQL)") → parent only
 - Locations → `(Remote)` / `, Remote` stripped into `is_remote: bool`; spelled-out US states abbreviated
 
-**Input:** `extracted/<file_id>.json`
+**Input:** `data/extracted/<file_id>.json`
 
-**Output:** `normalized/<file_id>.json` — structurally identical to extracted with canonical fields added
+**Output:** `data/normalized/<file_id>.json` — structurally identical to extracted with canonical fields added
 
 **Key decisions made:**
 - Seasonal dates: Spring → 05, Summer → 08, Fall/Autumn → 12
@@ -233,7 +233,7 @@ Low-confidence records must be queryable: `SELECT * FROM bullet WHERE confidence
 4. **Stage 6** — embeddings + DB write (postgres schema migration, pgvector, provenance)
 5. **Infrastructure** — set up Postgres locally, wire `.env`, run full batch end-to-end
 
-Stages 3–4 can be developed and tested against the existing `parsed/` JSON files without any database. Stages 5–6 require database infrastructure.
+Stages 3–4 can be developed and tested against the existing `data/parsed/` JSON files without any database. Stages 5–6 require database infrastructure.
 
 ---
 
@@ -243,29 +243,29 @@ Stages 3–4 can be developed and tested against the existing `parsed/` JSON fil
 source .venv/bin/activate
 
 # Stage 2: extract text from raw resumes
-ingest raw/resumes/          # entire directory
-ingest raw/resumes/foo.pdf   # single file
+ingest data/raw/resumes/          # entire directory
+ingest data/raw/resumes/foo.pdf   # single file
 
 # Stage 3: segment extracted text into labeled sections
-segment parsed/              # all files in parsed/
-segment parsed/abc123.json   # single file
-segment parsed/ --force      # re-segment even if output exists
-segment parsed/ --segmented-dir segmented/   # custom output dir
+segment data/parsed/              # all files in data/parsed/
+segment data/parsed/abc123.json   # single file
+segment data/parsed/ --force      # re-segment even if output exists
+segment data/parsed/ --segmented-dir data/segmented/   # custom output dir
 
 # Stage 4: extract structured fields from segmented sections
-extract segmented/              # all files in segmented/
-extract segmented/abc123.json   # single file
-extract segmented/ --force      # re-extract even if output exists
-extract segmented/ --extracted-dir extracted/   # custom output dir
+extract data/segmented/              # all files in data/segmented/
+extract data/segmented/abc123.json   # single file
+extract data/segmented/ --force      # re-extract even if output exists
+extract data/segmented/ --extracted-dir data/extracted/   # custom output dir
 
 # Stage 5: normalize dates, companies, skills, locations
-normalize extracted/              # all files in extracted/
-normalize extracted/abc123.json   # single file
-normalize extracted/ --force      # re-normalize even if output exists
-normalize extracted/ --normalized-dir normalized/   # custom output dir
+normalize data/extracted/              # all files in data/extracted/
+normalize data/extracted/abc123.json   # single file
+normalize data/extracted/ --force      # re-normalize even if output exists
+normalize data/extracted/ --normalized-dir data/normalized/   # custom output dir
 ```
 
-Or without activating: `.venv/bin/ingest raw/resumes/` / `.venv/bin/segment parsed/`
+Or without activating: `.venv/bin/ingest data/raw/resumes/` / `.venv/bin/segment data/parsed/`
 
 ## Design Constraints (non-negotiable)
 
