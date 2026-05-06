@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import os
 import sys
+import traceback
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -216,3 +218,68 @@ def normalize_main() -> None:
             failed += 1
 
     print(f"\nFinished: {ok} normalized, {skipped} skipped, {failed} failed")
+
+
+def index_main() -> None:
+    """
+    Usage:
+        index normalized/                 # process all normalized JSON files
+        index normalized/abc123.json      # single file
+        index normalized/ --force         # delete and re-insert even if already indexed
+    """
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print(index_main.__doc__)
+        sys.exit(0 if args else 1)
+
+    force = "--force" in args
+    args = [a for a in args if a != "--force"]
+
+    targets: list[Path] = []
+    for arg in args:
+        p = Path(arg)
+        if p.is_dir():
+            targets.extend(sorted(p.glob("*.json")))
+        elif p.is_file() and p.suffix == ".json":
+            targets.append(p)
+        else:
+            print(f"[skip] not found or not a JSON file: {arg}")
+
+    if not targets:
+        print("No normalized JSON files found.")
+        sys.exit(1)
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        print("DATABASE_URL is not set.")
+        sys.exit(1)
+
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    if not openai_api_key:
+        print("OPENAI_API_KEY is not set.")
+        sys.exit(1)
+
+    import psycopg2
+    from openai import OpenAI
+    from .index import index as do_index
+
+    conn = psycopg2.connect(database_url)
+    openai_client = OpenAI(api_key=openai_api_key)
+
+    print(f"Indexing {len(targets)} file(s)...\n")
+
+    ok = skipped = failed = 0
+    for path in targets:
+        try:
+            result = do_index(path, conn, openai_client, force=force)
+            if result["status"] == "skipped":
+                skipped += 1
+            else:
+                ok += 1
+        except Exception as e:
+            print(f"[error] {path.name}: {e}")
+            traceback.print_exc()
+            failed += 1
+
+    conn.close()
+    print(f"\nFinished: {ok} indexed, {skipped} skipped, {failed} failed")

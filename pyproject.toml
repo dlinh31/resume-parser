@@ -7,6 +7,8 @@ dependencies = [
     "google-cloud-documentai>=2.29",
     "anthropic>=0.40",
     "python-dotenv>=1.0",
+    "psycopg2-binary>=2.9",
+    "openai>=1.0",
 ]
 
 [project.scripts]
@@ -14,6 +16,7 @@ ingest = "resume_parser.cli:ingest_main"
 segment = "resume_parser.cli:segment_main"
 extract = "resume_parser.cli:extract_main"
 normalize = "resume_parser.cli:normalize_main"
+index = "resume_parser.cli:index_main"
 
 [build-system]
 requires = ["hatchling"]
