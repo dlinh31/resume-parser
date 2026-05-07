@@ -25,7 +25,7 @@ def file_id(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
 
 
-def extract(path: str | Path) -> Path:
+def extract(path: str | Path, output_dir: Path | None = None) -> Path:
     path = Path(path)
     ftype = classify(path)
     fid = file_id(path)
@@ -49,8 +49,9 @@ def extract(path: str | Path) -> Path:
         "pages": pages,
     }
 
-    PARSED_DIR.mkdir(exist_ok=True)
-    out_path = PARSED_DIR / f"{fid}.json"
+    out_dir = output_dir if output_dir is not None else PARSED_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{fid}.json"
     out_path.write_text(json.dumps(output, indent=2))
     print(f"[extract] wrote {out_path} ({len(pages)} pages, {sum(len(p['text']) for p in pages):,} chars total)")
     return out_path

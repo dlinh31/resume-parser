@@ -1,0 +1,1 @@
+ALTER TABLE resume ADD COLUMN IF NOT EXISTS pdf_bytes BYTEA;
