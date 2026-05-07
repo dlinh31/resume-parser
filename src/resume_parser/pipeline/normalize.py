@@ -37,7 +37,7 @@ _US_STATES = {
 
 
 def _load_skills_map() -> dict[str, str]:
-    data_path = Path(__file__).parent / 'data' / 'skills_map.json'
+    data_path = Path(__file__).parent.parent / 'data' / 'skills_map.json'
     with open(data_path) as f:
         return json.load(f)
 
@@ -51,30 +51,21 @@ def _parse_date_iso(raw: str | None) -> str | None:
     s = raw.strip()
     if not s or s.lower() in ('present', 'current', 'now'):
         return None
-    # Compound award dates like "2022 & 2023" — too ambiguous
     if '&' in s:
         return None
-    # Strip "Expected" prefix
     s = re.sub(r'^expected\s+', '', s, flags=re.IGNORECASE).strip()
-    # Seasonal: "Spring 2027", "Fall 2025", "Summer 2024"
     m = re.match(r'^(spring|summer|fall|autumn|winter)\s+(\d{4})$', s, re.IGNORECASE)
     if m:
         return f"{m.group(2)}-{_SEASONAL[m.group(1).lower()]}"
-    # Slash compound date e.g. "Summer 2024/Fall 2025" — too ambiguous
     if '/' in s and re.search(r'[A-Za-z]', s):
         return None
-    # Non-standard month abbreviation
     s = re.sub(r'\bSept\b', 'Sep', s, flags=re.IGNORECASE)
-    # Strip trailing period from month names: "Jul." -> "Jul", "March." -> "March"
     s = re.sub(r'\b([A-Za-z]{3,9})\.', r'\1', s)
-    # MM/YYYY
     m = re.match(r'^(\d{2})/(\d{4})$', s)
     if m:
         return f"{m.group(2)}-{m.group(1)}"
-    # YYYY only (some award dates)
     if re.match(r'^\d{4}$', s):
         return s
-    # Month + Year
     for fmt in ('%b %Y', '%B %Y'):
         try:
             return datetime.strptime(s, fmt).strftime('%Y-%m')
@@ -107,7 +98,6 @@ def _normalize_location(raw: str | None) -> tuple[str | None, bool]:
     if n:
         is_remote = True
     s = s.strip().rstrip(',').strip()
-    # Abbreviate spelled-out US state in the last segment: "Chicago, Illinois" -> "Chicago, IL"
     parts = s.rsplit(',', 1)
     if len(parts) == 2:
         abbr = _US_STATES.get(parts[1].strip().lower())
@@ -117,7 +107,6 @@ def _normalize_location(raw: str | None) -> tuple[str | None, bool]:
 
 
 def _split_skill(raw: str) -> list[str]:
-    """Strip year annotations and subcategory parentheticals, then split on /."""
     s = re.sub(r'\s*\([^)]*\)', '', raw).strip()
     if not s:
         return []

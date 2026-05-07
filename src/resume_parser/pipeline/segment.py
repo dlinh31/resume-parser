@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .llm.base import LLMAdapter
+from ..llm.base import LLMAdapter
 
 
 def _assemble_text(parsed: dict) -> str:

@@ -3,7 +3,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .llm.base import LLMAdapter, SectionSegment, SegmentResult
+from ..llm.base import LLMAdapter, SectionSegment, SegmentResult
 
 
 def extract(
