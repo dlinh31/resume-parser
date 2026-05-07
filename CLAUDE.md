@@ -24,40 +24,49 @@ A batch pipeline that ingests resume files (PDF, image), parses and structures t
 ## Project Structure
 
 ```
-src/resume_parser/
-  classify.py      # stage 1: detect pdf_text / pdf_scanned / image
-  extract.py       # stage 2: extract text + layout, write to output_dir
-  segment.py       # stage 3: LLM section segmentation
-  field_extract.py # stage 4: LLM field extraction
-  normalize.py     # stage 5: date/company/skill canonicalization
-  index.py         # stage 6: embed bullets, write to PostgreSQL
-  pipeline.py      # orchestrates stages 1–6 for a single file
-  jobs.py          # in-memory job store (threading.Lock-based)
-  server.py        # FastAPI app
-  cli.py           # CLI entry points
-  llm/
-    base.py        # LLMAdapter ABC + dataclasses
-    claude.py      # ClaudeAdapter implementation
-migrations/
-  001_initial.sql  # full schema
-  002_add_pdf_bytes.sql
-data/raw/resumes/  # original resume files
+server/
+  src/resume_parser/
+    pipeline/
+      classify.py      # stage 1: detect pdf_text / pdf_scanned / image
+      extract.py       # stage 2: extract text + layout, write to output_dir
+      segment.py       # stage 3: LLM section segmentation
+      field_extract.py # stage 4: LLM field extraction
+      normalize.py     # stage 5: date/company/skill canonicalization
+      index.py         # stage 6: embed bullets, write to PostgreSQL
+      run.py           # orchestrates stages 1–6 for a single file
+    api/
+      app.py           # FastAPI app
+      deps.py          # dependency injection
+      schemas.py       # Pydantic request/response models
+      routes/
+        resumes.py
+        jobs.py
+    db/
+      models.py        # SQLAlchemy ORM models
+      session.py       # session factory
+    llm/
+      base.py          # LLMAdapter ABC + dataclasses
+      claude.py        # ClaudeAdapter implementation
+    jobs.py            # in-memory job store (threading.Lock-based)
+    main.py            # uvicorn entry point
+  alembic/
+    versions/
+      001_initial_schema.py
+  alembic.ini
+  pyproject.toml
+server/data/raw/resumes/  # original resume files
 ```
 
 ## Running
 
 ```bash
-source .venv/bin/activate
-
-# CLI batch mode
-ingest data/raw/resumes/          # entire directory
-ingest data/raw/resumes/foo.pdf   # single file
+cd server && source .venv/bin/activate
 
 # API server
 serve                             # starts on http://0.0.0.0:8000
 ```
 
-Or without activating: `.venv/bin/serve`
+Or without activating: `server/.venv/bin/serve`
 
 ## Pipeline Stages
 
@@ -80,8 +89,8 @@ Each stage's output is persisted so any stage can be re-run independently.
 ## Storage Layout
 
 ```
-data/raw/          # original uploaded files (URI-addressed)
-data/parsed/       # stage 2 raw text output per file (SHA-256 prefix as filename)
+server/data/raw/          # original uploaded files (URI-addressed)
+server/data/parsed/       # stage 2 raw text output per file (SHA-256 prefix as filename)
 ```
 
 PostgreSQL schema (planned): resume → section → field/bullet with JSONB for variable fields.
