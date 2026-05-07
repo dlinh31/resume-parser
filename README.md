@@ -1,8 +1,6 @@
 # resume-parser
 
-A batch ingestion pipeline that turns resume files (PDF, image) into structured, queryable data. It classifies each file, extracts raw text and layout, segments the resume into labeled sections via LLM, and extracts typed fields (experience, education, projects, skills) from each section — all stored as JSON for downstream resume-tailoring use.
-
-Scope is ingestion only — no generation, no user-facing app.
+A batch ingestion pipeline that turns resume files (PDF, image) into structured, queryable data. It classifies each file, extracts raw text and layout, segments the resume into labeled sections via LLM, and extracts typed fields (experience, education, projects, skills) — stored in PostgreSQL for downstream resume-tailoring use.
 
 ## Stages
 
@@ -10,10 +8,8 @@ Scope is ingestion only — no generation, no user-facing app.
 2. **Extract** — pull raw text + word positions via pdfplumber (text PDFs) or Google Document AI (scanned/images)
 3. **Segment** — LLM call to label resume sections with confidence scores
 4. **Field Extract** — LLM call to parse typed fields from each section
-5. **Normalize** — canonicalize dates, companies, and skills *(not yet implemented)*
-6. **Index** — compute embeddings and write to PostgreSQL + pgvector *(not yet implemented)*
-
-Each stage persists output to disk so any stage can be re-run independently.
+5. **Normalize** — canonicalize dates, companies, and skills
+6. **Index** — compute embeddings and write to PostgreSQL + pgvector
 
 ## Install
 
@@ -29,43 +25,41 @@ Copy `.env.example` to `.env`. Required variables:
 - `LLM_MODEL` — optional Claude model override (default: `claude-haiku-4-5-20251001`)
 - `DOCAI_PROJECT_ID`, `DOCAI_PROCESSOR_ID`, `DOCAI_LOCATION` — for scanned PDFs and images only
 - `GOOGLE_APPLICATION_CREDENTIALS` — path to GCP service account JSON, for scanned/image path only
-- `OPENAI_API_KEY`, `DATABASE_URL` — for stage 6 (not yet implemented)
-
-Text-only PDFs only need `ANTHROPIC_API_KEY`.
+- `OPENAI_API_KEY`, `DATABASE_URL` — for stages 5 and 6
 
 ## Usage
 
-Stages 1 and 2 run together under `ingest`:
+Start the server:
 
 ```bash
-ingest data/raw/resumes/           # entire directory
-ingest data/raw/resumes/foo.pdf    # single file
+serve
 ```
 
-Stage 3 — segment into labeled sections:
+Runs on `http://0.0.0.0:8000`.
 
-```bash
-segment data/parsed/               # all files
-segment data/parsed/abc123.json    # single file
-segment data/parsed/ --force       # re-run even if output exists
-segment data/parsed/ --segmented-dir path/to/out/
+### Upload a resume
+
+```
+POST /resumes
+Content-Type: multipart/form-data
+
+file: <resume file>
 ```
 
-Stage 4 — extract structured fields:
+Returns `202` with `{ "job_id": "...", "file_id": "..." }`. Duplicate uploads return `200` with `{ "job_id": null, "file_id": "...", "status": "already_indexed" }`.
 
-```bash
-extract data/segmented/            # all files
-extract data/segmented/abc123.json # single file
-extract data/segmented/ --force    # re-run even if output exists
-extract data/segmented/ --extracted-dir path/to/out/
+### Poll job status
+
+```
+GET /jobs/{job_id}
 ```
 
-Full pipeline end to end:
+Returns job status: `pending`, `processing`, `done`, or `failed`.
 
-```bash
-ingest data/raw/resumes/
-segment data/parsed/
-extract data/segmented/
+### Get resume data
+
+```
+GET /resumes/{file_id}
 ```
 
-All commands are idempotent — files with existing output are skipped unless `--force` is passed.
+Returns the full parsed resume — contact info, experiences, education, projects, and skills.
