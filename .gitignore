@@ -1,7 +1,10 @@
-.env
-data/
+server/.env
+server/data/
+server/.venv/
 __pycache__/
 *.pyc
-.venv/
 *.egg-info/
 dist/
+client/node_modules/
+client/dist/
+client/.env
